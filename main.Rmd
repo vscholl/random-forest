@@ -1,0 +1,27 @@
+---
+title: "Random Forest in R"
+author: "Victoria Scholl"
+date: "4/8/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load_data}
+# define local path to NEON l1 Woody Vegetation data 
+woody_path <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-11.basic.20171016T160526Z/NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-11.basic.20171016T160526Z.csv"
+
+# load in situ tree data 
+woody <- read.csv(woody_path)
+
+# append additional woody veg data 
+woody_path2 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-12.basic.20171016T160526Z/NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-12.basic.20171016T160526Z.csv"
+
+woody2 <- read.csv(woody_path2)
+
+
+```
+
