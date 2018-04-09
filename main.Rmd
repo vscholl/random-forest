@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(ggplot2)
 library(randomForest)
+library(knitr)
 ```
 
 ## NEON woody vegetation structure data product 
@@ -131,6 +132,20 @@ woody_path <- "/Users/victoriascholl/github/random-forest/woody.csv"
 write.csv(woody, file = woody_path)
 
 ```
+
+## Explore the Vegetation Data 
+
+```{r taxon_table}
+taxon.data <- woody %>%
+                select(taxonID, scientificName) %>%
+                  distinct() %>%
+                    arrange((taxonID)) %>%
+                      rename("Taxon ID" = taxonID, "Scientific Name" = scientificName) 
+
+kable(taxon.data)
+```
+
+
 
 
 ```{r explore_data}
