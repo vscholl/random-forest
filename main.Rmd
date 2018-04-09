@@ -7,21 +7,222 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(ggplot2)
+library(randomForest)
+```
+
+## NEON woody vegetation structure data product 
+
+The following information is available in the [NEON User Guide to Woody Plant Vegetation Structure (NEON.DP1.10098)](http://data.neonscience.org/documents/10179/2237401/NEON_vegStructure_userGuide_vA/b390b73d-b259-46d8-9522-58fd72f12f8e):
+
+Trees >10 cm diameter are mapped are mapped as points (offsets from a reference pointID; see table vst_mapping); small diameter trees and shrubs are not mapped but are iden - fied according to the subplot or nested subplot in which they are located (see tables vst_apparen ndividual and vst_shrubgroup) as are non-woody plants (see table nst_perinidividual). 
+
+The individualID (NEON.PLA.D##.######) is a linking variable that  es vegeta on structure measurements and
+associated metadata to the following associated data products:
+
+The Woody Plant Vegetation Structure data product is comprised of four related tables:
+
+**vst_perplotperyear** - One record is created for each plotID visited at a site during a given eventID. Recorded metadata include presence/absence of various woody growth forms, and nestedSubplotArea used to measure each growth form (if applicable).
+
+**vst_mappingandtagging** - One or more records expected for each tagged woody individual (individualID) for all  me. A subset of tagged individuals are also mapped. Corrections to taxonID or mapped loca on through  me will result in duplicate individualIDs. In the case of duplicates, users are advised to retain the record with the latest date. Non-woody individuals that are also mapped and/or tagged (e.g., cac  at some sites, small palms, etc.) are also recorded in vst_mappingandtagging.
+
+**vst_apparent individual** - For each unique woody individualID recorded in vst_mappingandtagging, technicians create at least one record in vst_apparen ndividual for each eventID. Multiple records per individualID are created for multibole individuals of the following growthForms: small tree, sapling, single shrub, small shrub. To scale up measurements from individuals to the plot-scale, per growthForm measurement areas are linked by plotID and eventID in vst_perplotperyear.
+
+*Shape* appears only to be recorded for shrubs. 
+
+
+
+```{r merge_veg}
+merge_veg <- function(struct, species){
+  # Merges species data with vegetation structure data
+  # based on matching individual ID's. 
+  # 
+  # inputs
+  #   struct:
+  #     data frame containing vegetation structure (vst_apparentindividual)
+  #   species: 
+  #     data frame containing scientific names of mapped plants (vst_mappingandtagging)
+  #
+  # output
+  #   struct:
+  #     input data frame with additional columns of species information
+  
+    
+  # find matching individual ID's between the tables
+  i <- match(as.character(struct$individualID),
+               as.character(species$individualID))
+  
+  # add species columns to structure table
+  struct$scientificName <- species$scientificName[i]
+  struct$taxonID <- species$taxonID[i]
+  struct$taxonRank <-species$taxonRank[i]
+  
+  # only keep entries with "species" taxon rank type 
+  struct <- struct %>% 
+              filter(taxonRank == "species")
+
+  return(struct)
+}
 ```
 
 
-```{r load_data}
-# define local path to NEON l1 Woody Vegetation data 
-woody_path <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-11.basic.20171016T160526Z/NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-11.basic.20171016T160526Z.csv"
 
-# load in situ tree data 
+```{r load_data}
+
+# define local path to NEON L1 Woody Vegetation data tables
+path1 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-11.basic.20171016T160526Z/"
+
+struct1 <- read.csv(paste(path1, 
+                 "NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-11.basic.20171016T160526Z.csv",
+                 sep = ""))
+
+species1 <- read.csv(paste(path1, 
+                  "NEON.D17.SJER.DP1.10098.001.vst_mappingandtagging.basic.20171016T160526Z.csv", 
+                  sep = ""))
+
+woody1 <- merge_veg(struct1, species1)
+
+
+# load second set of field data 
+path2 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-12.basic.20171016T160526Z/"
+
+struct2 <- read.csv(paste(path2, 
+                 "NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-12.basic.20171016T160526Z.csv",
+                 sep = ""))
+
+species2 <-read.csv(paste(path2, 
+                  "NEON.D17.SJER.DP1.10098.001.vst_mappingandtagging.basic.20171016T160526Z.csv", 
+                  sep = ""))
+
+woody2 <- merge_veg(struct2, species2)
+
+
+# combine both sets of data 
+woody <- rbind(woody1, woody2)
+
+# filter to keep only the columns of interest 
+woody <- woody %>%
+          select(individualID,
+                 growthForm,
+                 plantStatus,
+                 stemDiameter,
+                 #measurementHeight,
+                 height,
+                 #baseCrownHeight,
+                 maxCrownDiameter,
+                 #ninetyCrownDiameter,
+                 #shape,
+                 #basalStemDiameter,
+                 #basalStemDiameterMsrmntHeight,
+                 scientificName,
+                 taxonID)
+
+
+# keep only complete entries 
+woody <- woody[complete.cases(woody),]
+
+# check number of unique species left in data frame
+length(unique(as.character(woody$taxonID)))
+
+# write filtered data frame to file
+woody_path <- "/Users/victoriascholl/github/random-forest/woody.csv"
+write.csv(woody, file = woody_path)
+
+```
+
+
+```{r explore_data}
 woody <- read.csv(woody_path)
 
-# append additional woody veg data 
-woody_path2 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-12.basic.20171016T160526Z/NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-12.basic.20171016T160526Z.csv"
 
-woody2 <- read.csv(woody_path2)
+# number of samples of each species 
+ggplot(aes(taxonID, fill = taxonID), data = woody) + 
+  geom_bar() + 
+  ggtitle("Histogram of Taxon IDs") + 
+  labs(x = "Taxon ID", y = "Number of samples") + 
+  scale_fill_discrete(name = "Taxon ID")
 
+
+# create boxplot to visually compare the distribution of measurements
+# across and within different taxon ID's 
+
+# height
+ggplot(aes(taxonID, height, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Height distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Height (m)") +
+  scale_fill_discrete(name = "Taxon ID")
+
+# stem diameter 
+ggplot(aes(taxonID, stemDiameter, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Stem diameter distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Stem diamater (cm)") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+# max crown diameter
+ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Maximum Crown Diameter distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Max crown diameter (m)") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+# plant status
+ggplot(aes(taxonID, plantStatus, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Plant Status distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Plant Status") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+# growth form
+ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Growth Form distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Growth Form") + 
+  scale_fill_discrete(name = "Taxon ID")
+```
+
+## Random Forest 
+
+Sources of useful tutorials for the randomForest function in R: 
+
+ - [trevorstephens](http://trevorstephens.com/kaggle-titanic-tutorial/r-part-5-random-forests/) 
+ - [kaggle](https://www.kaggle.com/mrisdal/exploring-survival-on-the-titanic)
+
+Features (predictor variables) and class labels (response variable) must be provided in a data frame. 
+
+The training and test sets must be separated. Training samples can be chosen by randomly selecting *n* of the input samples. 
+(However, running the randomForest function returns an error when there are classes present in the test set factor levels)
+
+
+```{r}
+
+# further filter data drame for only columns of interest
+woody.features <- woody %>% 
+          select(growthForm, plantStatus, stemDiameter, height, maxCrownDiameter, taxonID)
+
+# separate training and test sets
+train=sample(1:nrow(woody.features),200)
+woody.train <- woody.features[train,]
+woody.train <- droplevels(woody.train)
+
+# set the random seed in R for reproducibility
+set.seed(408)
+
+# taxon ID is the response variable
+# all other variables are used as predictors
+woody.rf <- randomForest(taxonID ~ ., 
+                         data = woody.train,
+                         importance = TRUE,
+                         ntree = 1000) 
+
+varImpPlot(woody.rf)
+
+plot(woody.rf)
+
+print(woody.rf)
 
 ```
 
