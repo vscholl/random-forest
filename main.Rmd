@@ -7,12 +7,40 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(stringsAsFactors = FALSE)
 
 library(dplyr)
 library(ggplot2)
 library(randomForest)
 library(knitr)
+library(devtools)
+library(geoNEON)
+library(sp)           
+library(swfscMisc)    
+library(rgdal)
+library(rgeos)
+
+# set working directory to neon-veg in local environment
+#setwd("~/github/neon-veg")
+
+# path to directory containing NEON l1 Woody Vegetation data 
+main_path <- "~/Documents/NEON/SJER/NEON_struct-woody-plant/" 
+
+# specify output directory path and filename of output shapefile to be written
+out_dir <- "~/github/random-forest/output/"
+
+# load local functions written in external R files. 
+# source("locate_woody_veg.R")
+# source("woody_df_to_shp.R")
+# source("merge_vst_tables.R")
+# source("get_vst_crs.R")
+# source("list_tiles_with_plants.R")
+# source("apply_area_threshold.R")
+# source("polygon_overlap.R")
+# source("get_poly.R")
+source("~/github/neon-veg/check_create_dir.R")
 ```
+
 
 ## NEON woody vegetation structure data product 
 
@@ -33,124 +61,95 @@ The Woody Plant Vegetation Structure data product is comprised of four related t
 
 *Shape* appears only to be recorded for shrubs. 
 
+```{r merge_veg_structure}
+# create output directory if it does not exist 
+check_create_dir(out_dir)
+
+# loop through folders of field data with different dates
+dirs <- list.dirs(path = main_path )
+dirs <-dirs[ grepl("NEON.D17.SJER", dirs) ]
 
 
-```{r merge_veg}
-merge_veg <- function(struct, species){
-  # Merges species data with vegetation structure data
-  # based on matching individual ID's. 
-  # 
-  # inputs
-  #   struct:
-  #     data frame containing vegetation structure (vst_apparentindividual)
-  #   species: 
-  #     data frame containing scientific names of mapped plants (vst_mappingandtagging)
-  #
-  # output
-  #   struct:
-  #     input data frame with additional columns of species information
+first_loop <- 1 # loop counter
+for (woody_path in dirs){
   
+  # mapping and tagging table (contains stem locations)
+  woody_mapping_path <- paste(woody_path, 
+                              list.files(path = woody_path, 
+                                         pattern = "mappingandtagging"), 
+                              sep="/")
+  
+  # apparent individual table (contains height and crown diameter)
+  woody_individual_path <- paste(woody_path, 
+                                 list.files(path = woody_path, 
+                                            pattern = "apparentindividual"), 
+                                 sep="/")
+  
+  # load both data tables 
+  # calculate mapped UTM locations of plants from distance/azimuth
+  woody_mapping <- read.csv(woody_mapping_path)
+  woody_individual <- read.csv(woody_individual_path)
+  
+  # rename the date column in vst_mapping to differentiate it
+  # from the "date" column in vst_individual.
+  # the latter will be used to assess the most recent entries
+  names(woody_mapping)[names(woody_mapping) == 'date'] <- 'date.mapping'
+  
+  # match mapped stems from "vst_mappingandtagging" with structure data 
+  # from "vst_apparentindividual" based on individualID 
+  merged <- merge(woody_mapping,
+                  woody_individual,
+                  by="individualID")
+  
+  # combine woody veg structure data to a single data frame 
+  if (first_loop == 1){
+    woody_all <- merged
+    woody_mapping_all <- woody_mapping
+    woody_individual_all <- woody_individual
+    first_loop <- 0
     
-  # find matching individual ID's between the tables
-  i <- match(as.character(struct$individualID),
-               as.character(species$individualID))
-  
-  # add species columns to structure table
-  struct$scientificName <- species$scientificName[i]
-  struct$taxonID <- species$taxonID[i]
-  struct$taxonRank <-species$taxonRank[i]
-  
-  # only keep entries with "species" taxon rank type 
-  struct <- struct %>% 
-              filter(taxonRank == "species")
-
-  return(struct)
+  } else {
+    woody_all <- rbind(woody_all, merged)
+    woody_mapping_all <- rbind(woody_mapping_all, woody_mapping)
+    woody_individual_all <- rbind(woody_individual_all, woody_individual)
+  }
 }
-```
 
+# remove duplicate entries; keep most recent
+merged <- woody_all %>% 
+  group_by(individualID) %>%
+  slice(which.max(as.Date(date)))
 
+# write merged vegetation structure tables to file 
+write.csv(merged, file = paste(out_dir,"vst_merged.csv"))
 
-```{r load_data}
+# only keep complete entries with the metrics of interest 
+woody <- merged[complete.cases(merged$taxonID) &
+                  complete.cases(merged$scientificName) & 
+                  complete.cases(merged$height) &  
+                  complete.cases(merged$maxCrownDiameter) & 
+                  #complete.cases(merged$stemDiameter) & 
+                  complete.cases(merged$growthForm),]
 
-# define local path to NEON L1 Woody Vegetation data tables
-path1 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-11.basic.20171016T160526Z/"
-
-struct1 <- read.csv(paste(path1, 
-                 "NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-11.basic.20171016T160526Z.csv",
-                 sep = ""))
-
-species1 <- read.csv(paste(path1, 
-                  "NEON.D17.SJER.DP1.10098.001.vst_mappingandtagging.basic.20171016T160526Z.csv", 
-                  sep = ""))
-
-woody1 <- merge_veg(struct1, species1)
-
-
-# load second set of field data 
-path2 <- "/Users/victoriascholl/CU-Boulder/earthlab/NEON_data/SJER/2016/NEON_struct-woody-plant/NEON.D17.SJER.DP1.10098.001.2016-12.basic.20171016T160526Z/"
-
-struct2 <- read.csv(paste(path2, 
-                 "NEON.D17.SJER.DP1.10098.001.vst_apparentindividual.2016-12.basic.20171016T160526Z.csv",
-                 sep = ""))
-
-species2 <-read.csv(paste(path2, 
-                  "NEON.D17.SJER.DP1.10098.001.vst_mappingandtagging.basic.20171016T160526Z.csv", 
-                  sep = ""))
-
-woody2 <- merge_veg(struct2, species2)
-
-
-# combine both sets of data 
-woody <- rbind(woody1, woody2)
-
-# filter to keep only the columns of interest 
-woody <- woody %>%
-          select(individualID,
-                 growthForm,
-                 plantStatus,
-                 stemDiameter,
-                 #measurementHeight,
-                 height,
-                 #baseCrownHeight,
-                 maxCrownDiameter,
-                 #ninetyCrownDiameter,
-                 #shape,
-                 #basalStemDiameter,
-                 #basalStemDiameterMsrmntHeight,
-                 scientificName,
-                 taxonID)
-
-
-# keep only complete entries 
-woody <- woody[complete.cases(woody),]
-
-# check number of unique species left in data frame
-length(unique(as.character(woody$taxonID)))
-
-# write filtered data frame to file
-woody_path <- "/Users/victoriascholl/github/random-forest/woody.csv"
-write.csv(woody, file = woody_path)
+# keep only the relevant columns 
 
 ```
 
-## Explore the Vegetation Data 
 
-```{r taxon_table}
+```{r species_table}
 taxon.data <- woody %>%
                 select(taxonID, scientificName) %>%
                   distinct() %>%
                     arrange((taxonID)) %>%
-                      rename("Taxon ID" = taxonID, "Scientific Name" = scientificName) 
+                      rename("Taxon ID" = taxonID, "Scientific Name" = scientificName)
+species_count <- count(woody, scientificName)
+taxon.data$count <- species_count$n
 
 kable(taxon.data)
 ```
 
 
-
-
 ```{r explore_data}
-woody <- read.csv(woody_path)
-
 
 # number of samples of each species 
 ggplot(aes(taxonID, fill = taxonID), data = woody) + 
@@ -159,9 +158,6 @@ ggplot(aes(taxonID, fill = taxonID), data = woody) +
   labs(x = "Taxon ID", y = "Number of samples") + 
   scale_fill_discrete(name = "Taxon ID")
 
-
-# create boxplot to visually compare the distribution of measurements
-# across and within different taxon ID's 
 
 # height
 ggplot(aes(taxonID, height, fill = taxonID), data = woody) +
@@ -184,13 +180,6 @@ ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = woody) +
   labs(x = "Taxon ID", y = "Max crown diameter (m)") + 
   scale_fill_discrete(name = "Taxon ID")
 
-# plant status
-ggplot(aes(taxonID, plantStatus, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Plant Status distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Plant Status") + 
-  scale_fill_discrete(name = "Taxon ID")
-
 # growth form
 ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
   geom_boxplot() + 
@@ -198,6 +187,7 @@ ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
   labs(x = "Taxon ID", y = "Growth Form") + 
   scale_fill_discrete(name = "Taxon ID")
 ```
+
 
 ## Random Forest 
 
