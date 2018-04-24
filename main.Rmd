@@ -137,22 +137,28 @@ woody <- merged[complete.cases(merged$taxonID) &
 
 
 ```{r species_table}
-taxon.data <- woody %>%
-                select(taxonID, scientificName) %>%
-                  distinct() %>%
-                    arrange((taxonID)) %>%
-                      rename("Taxon ID" = taxonID, "Scientific Name" = scientificName)
-species_count <- count(woody, scientificName)
-taxon.data$count <- species_count$n
 
-kable(taxon.data)
+woody_test <- woody %>%
+  group_by(taxonID, scientificName) %>%
+  summarise(total = n())
+
+common_from_sci <- sci2comm(scinames = woody_test$scientificName, db = "itis")
+
+
+woody_test$commonName
+
+kable(woody_test)
 ```
 
 
 ```{r explore_data}
 
 # number of samples of each species 
-ggplot(aes(taxonID, fill = taxonID), data = woody) + 
+ggplot(woody_test, 
+       aes(x = taxonID, y = total)) +
+  geom_bar(stat = "identity")
+
+ggplot(aes(taxonID, fill = scientificName), data = woody) + 
   geom_bar() + 
   ggtitle("Histogram of Taxon IDs") + 
   labs(x = "Taxon ID", y = "Number of samples") + 
