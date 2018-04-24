@@ -19,6 +19,7 @@ library(sp)
 library(swfscMisc)    
 library(rgdal)
 library(rgeos)
+library(taxize)
 
 # set working directory to neon-veg in local environment
 #setwd("~/github/neon-veg")
@@ -137,15 +138,11 @@ woody <- merged[complete.cases(merged$taxonID) &
 
 
 ```{r species_table}
-
 woody_test <- woody %>%
   group_by(taxonID, scientificName) %>%
-  summarise(total = n())
-
-common_from_sci <- sci2comm(scinames = woody_test$scientificName, db = "itis")
-
-
-woody_test$commonName
+  summarise(total = n()) %>%
+  mutate(sciNameShort = word(scientificName, 1, 2),
+         commonName = sci2comm(scinames = sciNameShort, db = "itis"))
 
 kable(woody_test)
 ```
