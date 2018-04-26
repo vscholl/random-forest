@@ -20,6 +20,7 @@ library(swfscMisc)
 library(rgdal)
 library(rgeos)
 library(taxize)
+library(stringr)
 
 # set working directory to neon-veg in local environment
 #setwd("~/github/neon-veg")
@@ -138,23 +139,88 @@ woody <- merged[complete.cases(merged$taxonID) &
 
 
 ```{r species_table}
+
+# Manual lookup of common names 
+manu_df <- data.frame(matrix("", ncol = 0, nrow = 16))
+
+manu_df <- manu_df %>%
+  mutate(commonNames = c("Unknown",
+                 "California buckeye", #AECA
+                 "Mariposa manzanita", #ARVIM
+                 "Buckbrush", #CECU
+                 "Chaparral whitethorn", #CELE2
+                 "Jimsonweed", #DAWR2
+                 "California buckthorn", #FRCAC7
+                 "Silver lupine", #LUAL4
+                 "California foothill pine", #PISA2
+                 "Blue oak", #QUDO
+                 "Interior live oak", #QUWI2
+                 "Buckthorn", #RHAMNA
+                 "Hollyleaf redberry", #RHIL
+                 "Blue elderberry", #SANIC5
+                 "Threadleaf ragwort", #SEFL3
+                 "Poison Oak" #TODI
+                  ),
+         taxonID = c("2PLANT",
+                     "AECA",
+                     "ARVIM",
+                     "CECU",
+                     "CELE2",
+                     "DAWR2",
+                     "FRCAC7",
+                     "LUAL4",
+                     "PISA2",
+                     "QUDO",
+                     "QUWI2",
+                     "RHAMNA",
+                     "RHIL",
+                     "SANIC5",
+                     "SEFL3",
+                     "TODI"))
+
 woody_test <- woody %>%
-  group_by(taxonID, scientificName) %>%
-  summarise(total = n()) %>%
-  mutate(sciNameShort = word(scientificName, 1, 2),
-         commonName = sci2comm(scinames = sciNameShort, db = "itis"))
+  mutate(treeORshrub = ifelse(grepl("tree", growthForm), 
+                      "tree", "shrub"),
+         sciNameShort = word(scientificName, 1, 2)) %>%
+  group_by(taxonID, sciNameShort, treeORshrub) %>%
+  summarise(total = n()) %>% 
+  ungroup() %>%
+  inner_join(manu_df, by = "taxonID") %>%
+  select(total, taxonID, sciNameShort, commonNames, treeORshrub)
+
+# growthForm %in% c("multi-bole tree", "single bole tree","small tree")
+
+#  mutate(sciNameShort = word(scientificName, 1, 2),
+#         commonName = sci2comm(scinames = sciNameShort, db = "itis"))
 
 kable(woody_test)
 ```
 
 
 ```{r explore_data}
+# TESTING using table with common names 
+ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) + 
+  geom_bar(stat="identity") + 
+  labs(y = "Total # of plants", x = "Common name") + 
+  ggtitle("Number of plants per species") +
+  scale_fill_manual(name = "Growth Type",
+                      labels = c("shrub", "tree"),
+                      values = c("grey", "darkgreen")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.background = element_blank(),
+        panel.grid.major = element_line(color = "grey10",
+                                        linetype = 3,
+                                        size = .1))
 
-# number of samples of each species 
-ggplot(woody_test, 
-       aes(x = taxonID, y = total)) +
-  geom_bar(stat = "identity")
+ggplot(data = woody_test, aes(x = taxonID)) +
+  geom_boxplot(data = woody, aes(y = height))
 
+
+```
+
+```{r eval=FALSE}
+
+# histogram scientific name 
 ggplot(aes(taxonID, fill = scientificName), data = woody) + 
   geom_bar() + 
   ggtitle("Histogram of Taxon IDs") + 
@@ -162,8 +228,9 @@ ggplot(aes(taxonID, fill = scientificName), data = woody) +
   scale_fill_discrete(name = "Taxon ID")
 
 
+
 # height
-ggplot(aes(taxonID, height, fill = taxonID), data = woody) +
+ggplot(data = woody, aes(taxonID, height, fill = taxonID)) +
   geom_boxplot() + 
   ggtitle("Height distributions across taxon IDs") + 
   labs(x = "Taxon ID", y = "Height (m)") +
@@ -192,6 +259,7 @@ ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
 ```
 
 
+
 ## Random Forest 
 
 Sources of useful tutorials for the randomForest function in R: 
@@ -205,7 +273,7 @@ The training and test sets must be separated. Training samples can be chosen by 
 (However, running the randomForest function returns an error when there are classes present in the test set factor levels)
 
 
-```{r}
+```{r eval=FALSE}
 
 # further filter data drame for only columns of interest
 woody.features <- woody %>% 
