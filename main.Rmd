@@ -63,6 +63,8 @@ The Woody Plant Vegetation Structure data product is comprised of four related t
 
 *Shape* appears only to be recorded for shrubs. 
 
+According to the NEON documentation (NEON.DOC.000987), "Species information may not be informative with respect to assigning growth form. For example, Toxicodendron spp. commonly exist as lianas, small shrubs, and shrub groups." For this reason, growth form was not included as a predictor variable. 
+
 ```{r merge_veg_structure}
 # create output directory if it does not exist 
 check_create_dir(out_dir)
@@ -197,7 +199,7 @@ kable(woody_test)
 ```
 
 
-```{r explore_data}
+```{r explore_data, eval=FALSE}
 # TESTING using table with common names 
 ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) + 
   geom_bar(stat="identity") + 
@@ -277,7 +279,12 @@ The training and test sets must be separated. Training samples can be chosen by 
 
 # further filter data drame for only columns of interest
 woody.features <- woody %>% 
-          select(growthForm, plantStatus, stemDiameter, height, maxCrownDiameter, taxonID)
+          select(growthForm, 
+                 plantStatus, 
+                 stemDiameter, 
+                 height, 
+                 maxCrownDiameter, 
+                 taxonID)
 
 # separate training and test sets
 train=sample(1:nrow(woody.features),200)
