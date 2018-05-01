@@ -199,7 +199,7 @@ kable(woody_test)
 ```
 
 
-```{r explore_data, eval=FALSE}
+```{r explore_data}
 # TESTING using table with common names 
 ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) + 
   geom_bar(stat="identity") + 
@@ -216,9 +216,18 @@ ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) +
 
 ggplot(data = woody_test, aes(x = taxonID)) +
   geom_boxplot(data = woody, aes(y = height))
+```
 
+According to the histogram, some species have very few samples in the data set.
+The data set will be filtered to maintain only species that have >15 samples.
+
+```{r}
+woody_gt15 <- woody %>%
+                group_by(taxonID) %>% 
+                  filter(n()>15)
 
 ```
+
 
 ```{r eval=FALSE}
 
