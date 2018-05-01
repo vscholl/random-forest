@@ -225,7 +225,6 @@ The data set will be filtered to maintain only species that have >15 samples.
 woody_gt15 <- woody %>%
                 group_by(taxonID) %>% 
                   filter(n()>15)
-
 ```
 
 
@@ -286,35 +285,83 @@ The training and test sets must be separated. Training samples can be chosen by 
 
 ```{r eval=FALSE}
 
+# convert output labels to categorical
+woody_gt15$taxonID <- factor(woody_gt15$taxonID)
+woody_gt15$growthForm <- factor(woody_gt15$growthForm)
+woody_gt15$plantStatus <- factor(woody_gt15$plantStatus)
+
 # further filter data drame for only columns of interest
-woody.features <- woody %>% 
+woody_features <- woody_gt15 %>% 
           select(growthForm, 
                  plantStatus, 
-                 stemDiameter, 
                  height, 
                  maxCrownDiameter, 
-                 taxonID)
+                 taxonID) %>% 
+          na.omit()
 
 # separate training and test sets
-train=sample(1:nrow(woody.features),200)
-woody.train <- woody.features[train,]
+# train
+train=sample(1:nrow(woody_features),200)
+woody.train <- woody_features[train,]
 woody.train <- droplevels(woody.train)
+# test
+woody.test <- woody_features[-train,]
+woody.test <- droplevels(woody.train)
 
 # set the random seed in R for reproducibility
 set.seed(408)
 
 # taxon ID is the response variable
 # all other variables are used as predictors
-woody.rf <- randomForest(taxonID ~ ., 
+rf_model <- randomForest(taxonID ~ ., 
                          data = woody.train,
                          importance = TRUE,
                          ntree = 1000) 
 
-varImpPlot(woody.rf)
+# summary of model
+print(rf_model)
 
-plot(woody.rf)
+# show error model 
+plot(rf_model)
+legend('topright', colnames(rf_model$err.rate), col=1:6, fill=1:6)
 
-print(woody.rf)
+# Get variable importance 
+varImpPlot(rf_model)
+importance <- importance(rf_model)
+varImportance <- data.frame(Variables = row.names(importance), 
+                            Importance = round(importance[ ,'MeanDecreaseGini'],2))
 
+# Create a rank variable based on importance
+rankImportance <- varImportance %>%
+  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
+
+# Use ggplot2 to visualize the relative importance of variables
+ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
+    y = Importance, fill = Importance)) +
+  geom_bar(stat='identity') + 
+  geom_text(aes(x = Variables, y = 0.5, label = Rank),
+    hjust=0, vjust=0.55, size = 4, colour = 'red') +
+  labs(x = 'Variables') +
+  coord_flip() 
+
+
+
+
+
+# Predict using the test set
+prediction <- predict(rf_model, woody.test)
+
+# Save the solution to a dataframe with two columns: PassengerId and Survived (prediction)
+solution <- data.frame(taxonID = woody.test$taxonID, Predicted = prediction)
+
+# Write the solution to file
+write.csv(solution, file = 'rf_mod_Solution.csv', row.names = F)
+
+# confusion matrix 
+# https://stackoverflow.com/questions/21589991/plot-a-confusion-matrix-with-color-and-frequency-in-r
+table(solution$taxonID, solution$Predicted)
+
+#cm_table <- table(solution$taxonID, solution$Predicted)
+#plot(cm_table, main="Taxon ID Confusion Matrix", xlab="TEST")
 ```
 
