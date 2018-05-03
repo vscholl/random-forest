@@ -222,48 +222,6 @@ ggplot(data = woody_test, aes(x = taxonID)) +
 According to the histogram, some species have very few samples in the data set.
 The data set will be filtered to maintain only species that have >15 samples.
 
-```{r eval=FALSE}
-
-# histogram scientific name 
-ggplot(aes(taxonID, fill = scientificName), data = woody) + 
-  geom_bar() + 
-  ggtitle("Histogram of Taxon IDs") + 
-  labs(x = "Taxon ID", y = "Number of samples") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-
-
-# height
-ggplot(data = woody, aes(taxonID, height, fill = taxonID)) +
-  geom_boxplot() + 
-  ggtitle("Height distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Height (m)") +
-  scale_fill_discrete(name = "Taxon ID")
-
-# stem diameter 
-ggplot(aes(taxonID, stemDiameter, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Stem diameter distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Stem diamater (cm)") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-# max crown diameter
-ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Maximum Crown Diameter distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Max crown diameter (m)") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-# growth form
-ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Growth Form distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Growth Form") + 
-  scale_fill_discrete(name = "Taxon ID")
-```
-
-
-
 ## Random Forest 
 
 Sources of useful tutorials for the randomForest function in R: 
@@ -277,14 +235,66 @@ Features (predictor variables) and class labels (response variable) must be prov
 The training and test sets must be separated. Training samples can be chosen by randomly selecting *n* of the input samples. 
 (However, running the randomForest function returns an error when there are classes present in the test set factor levels)
 
+```{r}
 
-```{r eval=FALSE}
+# keep only the species with "greater than" (gt) 20 samples
+woody_gt <- woody %>%
+                group_by(taxonID) %>% 
+                  filter(n()>20)
+
+# convert output labels to categorical
+woody_gt$taxonID <- factor(woody_gt$taxonID)
+woody_gt$growthForm <- factor(woody_gt$growthForm)
+woody_gt$plantStatus <- factor(woody_gt$plantStatus)
+
+# further filter data drame for only columns of interest
+woody_input <- woody_gt %>% 
+          select(growthForm, 
+                 plantStatus, 
+                 height, 
+                 maxCrownDiameter, 
+                 taxonID) %>% 
+          na.omit()
+
+# set the random seed in R for reproducibility
+set.seed(14)
+
+# LOOCV using caret package 
+# define training control
+train_control <- trainControl(method="LOOCV")
+# train the model
+model <- train(taxonID~., data=woody_input, trControl=train_control, method="rf")
+# summarize results
+print(model)
+
+# plot confusion matrix 
+# get every 1/3 rows for mtry=2
+model.2 = model$pred[seq(1, nrow(model$pred), 3), ]
+
+confusion_matrix <- as.data.frame(table(model.2$pred, model.2$obs))
+ggplot(data = confusion_matrix,
+       mapping = aes(x = Var1,
+                     y = Var2)) +
+  geom_tile(aes(fill = Freq)) +
+  geom_text(aes(label = sprintf("%1.0f", Freq)), vjust = 1) +
+  scale_fill_gradient(low = "blue",
+                      high = "red",
+                      trans = "log") +
+  labs(x = "Predicted taxon ID", y = "Actual taxon ID")
+```
+
+
+
+
+
+################## extra code
+
+```{r filtered_hist}
+
 woody_gt20 <- woody %>%
                 group_by(taxonID) %>% 
                   filter(n()>20)
-```
 
-```{r}
 # histogram of remaining species 
 woody_test20 <- woody_gt20 %>%
   mutate(treeORshrub = ifelse(grepl("tree", growthForm), 
@@ -309,7 +319,7 @@ ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test20)
                                         size = .1))
 ```
 
-```{r}
+```{r RF_manual}
 
 # convert output labels to categorical
 woody_gt20$taxonID <- factor(woody_gt20$taxonID)
@@ -396,7 +406,7 @@ rf_model$confusion
 #plot(cm_table, main="Taxon ID Confusion Matrix", xlab="TEST")
 ```
 
-```{r}
+```{r RF_manual2}
 # keep only the species with "greater than" (gt) 20 samples
 woody_gt <- woody %>%
                 group_by(taxonID) %>% 
@@ -448,9 +458,6 @@ for (n in 1:N){
                          data = training,
                          importance = TRUE,
                          ntree = 1000) 
-
-  # summary of model
-  #print(rf_model)
   
   # predict species of test observation, n
   prediction <- predict(rf_model, test)
@@ -479,28 +486,44 @@ ggplot(data = confusion_matrix,
   labs(x = "Predicted taxon ID", y = "True taxon ID")
 ```
 
-```{r}
-# LOOCV using caret package 
-# define training control
-train_control <- trainControl(method="LOOCV")
-# train the model
-model <- train(taxonID~., data=woody_input, trControl=train_control, method="rf")
-# summarize results
-print(model)
 
-# plot confusion matrix 
-# get every 1/3 rows for mtry=2
-model.2 = model$pred[seq(1, nrow(model$pred), 3), ]
+```{r eval=FALSE}
 
-confusion_matrix <- as.data.frame(table(model.2$pred, model.2$obs))
-ggplot(data = confusion_matrix,
-       mapping = aes(x = Var1,
-                     y = Var2)) +
-  geom_tile(aes(fill = Freq)) +
-  geom_text(aes(label = sprintf("%1.0f", Freq)), vjust = 1) +
-  scale_fill_gradient(low = "blue",
-                      high = "red",
-                      trans = "log") +
-  labs(x = "Predicted taxon ID", y = "Actual taxon ID")
+# histogram scientific name 
+ggplot(aes(taxonID, fill = scientificName), data = woody) + 
+  geom_bar() + 
+  ggtitle("Histogram of Taxon IDs") + 
+  labs(x = "Taxon ID", y = "Number of samples") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+
+
+# height
+ggplot(data = woody, aes(taxonID, height, fill = taxonID)) +
+  geom_boxplot() + 
+  ggtitle("Height distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Height (m)") +
+  scale_fill_discrete(name = "Taxon ID")
+
+# stem diameter 
+ggplot(aes(taxonID, stemDiameter, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Stem diameter distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Stem diamater (cm)") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+# max crown diameter
+ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Maximum Crown Diameter distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Max crown diameter (m)") + 
+  scale_fill_discrete(name = "Taxon ID")
+
+# growth form
+ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
+  geom_boxplot() + 
+  ggtitle("Growth Form distributions across taxon IDs") + 
+  labs(x = "Taxon ID", y = "Growth Form") + 
+  scale_fill_discrete(name = "Taxon ID")
 ```
 
