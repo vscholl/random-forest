@@ -349,10 +349,10 @@ o.accuracy <- rf$results$Accuracy[1]
 cm.tab <- xtabs(~ rf.2$pred + rf.2$obs)
 # overall accuracy
 sums <- vector()
-for(i in 1:dim(cm.tab)[1]){
-  sums[i] <- cm.tab[i,i]
-}
-#o.accuracy <- sum(sums)/sum(cm.tab)
+# for(i in 1:dim(cm.tab)[1]){
+#   sums[i] <- cm.tab[i,i]
+# }
+# o.accuracy <- sum(sums)/sum(cm.tab)
 # User accuracy
 u.accuracy <- diag(cm.tab) /rowSums(cm.tab)
 # Producer accuracy
@@ -380,5 +380,6 @@ b2 <- ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = input) +
   theme(legend.position="none",
         axis.text.x=element_text(angle=45, hjust=1))
 grid.arrange(b1, b2, nrow = 1)
+
 ```
 
