@@ -143,7 +143,7 @@ woody <- merged[complete.cases(merged$taxonID) &
 ```
 
 
-```{r species_table}
+```{r species_table, eval=FALSE}
 
 # Manual lookup of common names 
 manu_df <- data.frame(matrix("", ncol = 0, nrow = 16))
@@ -202,7 +202,7 @@ kable(woody_test)
 ```
 
 
-```{r explore_data}
+```{r explore_data, eval=FALSE}
 # TESTING using table with common names 
 ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) + 
   geom_bar(stat="identity") + 
@@ -220,8 +220,6 @@ ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test) +
 ggplot(data = woody_test, aes(x = taxonID)) +
   geom_boxplot(data = woody, aes(y = height))
 ```
-
-
 
 ## Random Forest 
 
@@ -255,6 +253,7 @@ Using the caret package in R, LOOCV was performed and yielded the following perf
 The actual and predicted species for every iteration of the LOOCV were plotted in the confusionMatrix. 
   Overall predictive accuracy: 39%
   Kappa (the amount of agreement correct by the agreement expected by chance. The values range from  1, which indicates complete disagreement between classes, to +1, which indicates a perfect agreement): 0.24
+  
 
 It gives estimates of what variables are important in the classification; in other words, which features add the most predictive power to the model. (Sort of like coefficients?) The scales are usually arbitrary, and there are two different criteria used that can generate different importance rankings. 
   
@@ -278,6 +277,11 @@ RF uses an Out-of-Bag (OOB) sampling procedure to provide a reliable error rate:
 ```{r}
 # set the random seed in R for reproducibility
 set.seed(14)
+
+# keep species with at least 20 samples 
+woody_gt <- woody %>%
+                group_by(taxonID) %>% 
+                  filter(n()>20)
 
 # further filter data drame for only columns of interest
 woody_input2 <- woody_gt %>% 
@@ -385,401 +389,5 @@ grid.arrange(b1, b2, nrow = 1)
 # variable importance 
 varImpPlot(rf$finalModel)
 
-
-
-
-
-
-
-
-# summarize results
-print(model2)
-
-# plot confusion matrix 
-# get every 1/3 rows for mtry=2
-model2.2 = model2$pred[seq(1, nrow(model2$pred), 3), ]
-
-cm <- data.frame(melt(xtabs(~ model2.2$pred + model2.2$obs)))
-
-#confusion_matrix <- as.data.frame(table(model2.2$pred, model2.2$obs))
-ggplot(data = cm,
-       mapping = aes(x = model2.2.pred,
-                     y = model2.2.obs)) +
-  geom_tile(aes(fill = value)) +
-  geom_text(aes(label = sprintf("%1.0f", value)), vjust = 1) +
-  scale_fill_gradient(low = "gray",
-                      high = "coral1",
-                      trans = "log") +
-  labs(x = "Predicted", y = "Actual") + 
-  theme(legend.position="none")
-
-confusionMatrix(model2.2$pred,model2.2$obs)
-
-# variable importance 
-n <- 130
-woody.train <- woody_input2[-n,]
-woody.train <- droplevels(woody.train)
-woody.test <- woody_input2[n,]
-woody.test <- droplevels(woody.test)
-rf_model <- randomForest(taxonID ~ ., 
-                         data = woody.train,
-                         importance = TRUE,
-                         ntree = 500) 
-print(rf_model)
-plot(rf_model)
-legend('topright', colnames(rf_model$err.rate), col=1:6, fill=1:6)
-# variable importance 
-varImpPlot(rf_model)
-importance <- importance(rf_model)
-
-varImportance <- data.frame(Variables = row.names(importance), 
-                            Importance = round(importance[ ,'MeanDecreaseGini'],2))
-rankImportance <- varImportance %>%
-  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
-# Use ggplot2 to visualize the relative importance of variables
-# MDG
-g1 <- ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
-    y = Importance, fill = Variables)) +
-  geom_bar(stat='identity') + 
-  #geom_text(aes(x = Variables, y = 0.5, label = Rank),
-  #  hjust=0, vjust=0.55, size = 4, colour = 'red') +
-  labs(x = 'Variables') +
-  theme(legend.position="none") + 
-  coord_flip() 
-
-
-# MDA 
-varImportance <- data.frame(Variables = row.names(importance), 
-                            Importance = round(importance[ ,'MeanDecreaseAccuracy'],2))
-rankImportance <- varImportance %>%
-  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
-g2 <- ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
-    y = Importance, fill = Variables)) +
-  geom_bar(stat='identity') + 
-  #geom_text(aes(x = Variables, y = 0.5, label = Rank),
-  #  hjust=0, vjust=0.55, size = 4, colour = 'red') +
-  scale_fill_manual(values = c("red", "grey", "seagreen3"))
-  labs(x = 'Variables') +
-  theme(legend.position="none")
-  coord_flip() 
-
-grid.arrange(g1, g2, nrow = 1)
-```
-
-
-
-
-################## extra code
-
-```{r filtered_hist}
-
-woody_gt20 <- woody %>%
-                group_by(taxonID) %>% 
-                  filter(n()>20)
-
-# histogram of remaining species 
-woody_test20 <- woody_gt20 %>%
-  mutate(treeORshrub = ifelse(grepl("tree", growthForm), 
-                      "tree", "shrub"),
-         sciNameShort = word(scientificName, 1, 2)) %>%
-  group_by(taxonID, sciNameShort, treeORshrub) %>%
-  summarise(total = n()) %>% 
-  ungroup() %>%
-  inner_join(manu_df, by = "taxonID") %>%
-  select(total, taxonID, sciNameShort, commonNames, treeORshrub)
-ggplot(aes(x = commonNames, y = total, fill = treeORshrub), data = woody_test20) + 
-  geom_bar(stat="identity") + 
-  labs(y = "Total # of plants", x = "Common name") + 
-  ggtitle("Number of plants per species") +
-  scale_fill_manual(name = "Growth Type",
-                      labels = c("shrub", "tree"),
-                      values = c("grey", "darkgreen")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),
-        panel.background = element_blank(),
-        panel.grid.major = element_line(color = "grey10",
-                                        linetype = 3,
-                                        size = .1))
-```
-
-```{r RF_manual}
-
-# convert output labels to categorical
-woody_gt20$taxonID <- factor(woody_gt20$taxonID)
-woody_gt20$growthForm <- factor(woody_gt20$growthForm)
-woody_gt20$plantStatus <- factor(woody_gt20$plantStatus)
-
-# further filter data drame for only columns of interest
-woody_features <- woody_gt20 %>% 
-          select(growthForm, 
-                 plantStatus, 
-                 height, 
-                 maxCrownDiameter, 
-                 taxonID) %>% 
-          na.omit()
-
-# separate training and test sets
-# train
-train=sample(1:nrow(woody_features),212)
-woody.train <- woody_features[train,]
-woody.train <- droplevels(woody.train)
-# test
-woody.test <- woody_features[-train,]
-woody.test <- droplevels(woody.train)
-
-# set the random seed in R for reproducibility
-set.seed(408)
-
-# taxon ID is the response variable
-# all other variables are used as predictors
-rf_model <- randomForest(taxonID ~ ., 
-                         data = woody.train,
-                         importance = TRUE,
-                         ntree = 500) 
-
-# summary of model
-print(rf_model)
-
-# show error as a funxtion of numTrees  
-# OOB (black solid line) for overall error
-# colored lines show each class error 
-plot(rf_model)
-legend('topright', colnames(rf_model$err.rate), col=1:6, fill=1:6)
-
-
-# Get variable importance 
-varImpPlot(rf_model)
-importance <- importance(rf_model)
-varImportance <- data.frame(Variables = row.names(importance), 
-                            Importance = round(importance[ ,'MeanDecreaseGini'],2))
-
-# Create a rank variable based on importance
-rankImportance <- varImportance %>%
-  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
-
-# Use ggplot2 to visualize the relative importance of variables
-ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
-    y = Importance, fill = Importance)) +
-  geom_bar(stat='identity') + 
-  geom_text(aes(x = Variables, y = 0.5, label = Rank),
-    hjust=0, vjust=0.55, size = 4, colour = 'red') +
-  labs(x = 'Variables') +
-  coord_flip() 
-
-
-
-
-
-# Predict using the test set
-prediction <- predict(rf_model, woody.test)
-
-# Save the solution to a dataframe with two columns: PassengerId and Survived (prediction)
-solution <- data.frame(taxonID = woody.test$taxonID, Predicted = prediction)
-
-# Write the solution to file
-write.csv(solution, file = 'rf_mod_Solution.csv', row.names = F)
-
-# confusion matrix 
-# https://stackoverflow.com/questions/21589991/plot-a-confusion-matrix-with-color-and-frequency-in-r
-table(solution$taxonID, solution$Predicted)
-rf_model$confusion
-
-
-#cm_table <- table(solution$taxonID, solution$Predicted)
-#plot(cm_table, main="Taxon ID Confusion Matrix", xlab="TEST")
-```
-
-```{r RF_manual2}
-# keep only the species with "greater than" (gt) 20 samples
-woody_gt <- woody %>%
-                group_by(taxonID) %>% 
-                  filter(n()>20)
-
-# convert output labels to categorical
-woody_gt$taxonID <- factor(woody_gt$taxonID)
-woody_gt$growthForm <- factor(woody_gt$growthForm)
-woody_gt$plantStatus <- factor(woody_gt$plantStatus)
-
-# further filter data drame for only columns of interest
-woody_input <- woody_gt %>% 
-          select(growthForm, 
-                 plantStatus, 
-                 height, 
-                 maxCrownDiameter, 
-                 taxonID) %>% 
-          na.omit()
-
-# set the random seed in R for reproducibility
-set.seed(14)
-
-# loop through N, number of plant observations 
-N <- nrow(woody_gt)
-
-# keep track of true vs. predicted labels 
-truth_labels <- woody_gt$taxonID
-predicted_labels <- matrix(data=NA, nrow=N)
-
-for (n in 1:N){
-  print(n)
-  
-  # create test set (observation n)
-  # and training set (N observations without n) 
-  test <- woody_input[n,-which(names(woody_input) == "taxonID")]
-  test <- droplevels(test)
-  test_label <- droplevels(woody_input[n,]$taxonID)
-  
-  training <- woody_input[-n,]
-  training <- droplevels(training)
-  
-  # set the factor levels to be the same for the test and train sets
-  # to avoid an error
-  common <- intersect(names(training), names(test)) 
-  for (p in common) { if (class(training[[p]]) == "factor") { levels(test[[p]]) <- levels(training[[p]]) } } 
-  
-  # train RF using N-1 observations 
-  rf_model <- randomForest(taxonID ~ ., 
-                         data = training,
-                         importance = TRUE,
-                         ntree = 1000) 
-  
-  # predict species of test observation, n
-  prediction <- predict(rf_model, test)
-  
-  # keep track of truth label and prediction 
-  predicted_labels[n] <- as.character(prediction)
-
-}
-
-# Create confusion matrix 
-table(truth_labels, predicted_labels) 
-
-cm <- confusionMatrix(as.factor(predicted_labels), truth_labels)
-cm$table
-
-# plot confusion matrix
-confusion_matrix <- as.data.frame(table(predicted_labels, truth_labels))
-ggplot(data = confusion_matrix,
-       mapping = aes(x = predicted_labels,
-                     y = truth_labels)) +
-  geom_tile(aes(fill = Freq)) +
-  geom_text(aes(label = sprintf("%1.0f", Freq)), vjust = 1) +
-  scale_fill_gradient(low = "blue",
-                      high = "red",
-                      trans = "log") +
-  labs(x = "Predicted taxon ID", y = "True taxon ID")
-```
-
-
-```{r eval=FALSE}
-
-# histogram scientific name 
-ggplot(aes(taxonID, fill = scientificName), data = woody) + 
-  geom_bar() + 
-  ggtitle("Histogram of Taxon IDs") + 
-  labs(x = "Taxon ID", y = "Number of samples") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-
-
-# height
-ggplot(data = woody, aes(taxonID, height, fill = taxonID)) +
-  geom_boxplot() + 
-  ggtitle("Height distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Height (m)") +
-  scale_fill_discrete(name = "Taxon ID")
-
-# stem diameter 
-ggplot(aes(taxonID, stemDiameter, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Stem diameter distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Stem diamater (cm)") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-# max crown diameter
-ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Maximum Crown Diameter distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Max crown diameter (m)") + 
-  scale_fill_discrete(name = "Taxon ID")
-
-# growth form
-ggplot(aes(taxonID, growthForm, fill = taxonID), data = woody) +
-  geom_boxplot() + 
-  ggtitle("Growth Form distributions across taxon IDs") + 
-  labs(x = "Taxon ID", y = "Growth Form") + 
-  scale_fill_discrete(name = "Taxon ID")
-```
-
-```{r}
-
-# keep only the species with "greater than" (gt) 20 samples
-woody_gt <- woody %>%
-                group_by(taxonID) %>% 
-                  filter(n()>20)
-
-# make histogram and table of remaining species 
-
-# table 
-woody_table <- woody_gt %>%
-  mutate(sciNameShort = word(scientificName, 1, 2)) %>%
-  group_by(taxonID, sciNameShort) %>%
-  summarise(total = n()) %>% 
-  ungroup() %>%
-  inner_join(manu_df, by = "taxonID") %>%
-  select(total, taxonID, sciNameShort, commonNames)
-kable(woody_table)
-
-# hist 
-g <- ggplot(aes(x = taxonID, y = total, fill = taxonID), data = woody_table) + 
-  geom_bar(stat="identity") + 
-  labs(y = "Total # of samples", x = "Taxon ID") + 
-  ggtitle("Number of plants per species") +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1),
-        panel.background = element_blank(),
-        panel.grid.major = element_line(color = "grey10",
-                                        linetype = 3,
-                                        size = .1)) 
-g
-ggsave(g, filename = "SpeciesHist.png", bg = "transparent")
-
-# convert output labels to categorical
-woody_gt$taxonID <- factor(woody_gt$taxonID)
-woody_gt$growthForm <- factor(woody_gt$growthForm)
-woody_gt$plantStatus <- factor(woody_gt$plantStatus)
-woody_gt$shape <- factor(woody_gt$shape)
-
-# further filter data drame for only columns of interest
-woody_input <- woody_gt %>% 
-          select(growthForm, 
-                 plantStatus, 
-                 height, 
-                 maxCrownDiameter, 
-                 taxonID) %>% 
-          na.omit()
-
-# set the random seed in R for reproducibility
-set.seed(14)
-
-# LOOCV using caret package 
-# define training control
-train_control <- trainControl(method="LOOCV")
-# train the model
-model <- train(taxonID~., data=woody_input, trControl=train_control, method="rf")
-# summarize results
-print(model)
-
-# plot confusion matrix 
-# get every 1/3 rows for mtry=2
-model.2 = model$pred[seq(1, nrow(model$pred), 3), ]
-
-confusion_matrix <- as.data.frame(table(model.2$pred, model.2$obs))
-ggplot(data = confusion_matrix,
-       mapping = aes(x = Var1,
-                     y = Var2)) +
-  geom_tile(aes(fill = Freq)) +
-  geom_text(aes(label = sprintf("%1.0f", Freq)), vjust = 1) +
-  scale_fill_gradient(low = "blue",
-                      high = "red",
-                      trans = "log") +
-  labs(x = "Predicted taxon ID", y = "Actual taxon ID")
 ```
 
