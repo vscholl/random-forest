@@ -22,6 +22,8 @@ library(rgeos)
 library(taxize)
 library(stringr)
 library(caret)
+library(reshape)
+library(gridExtra)
 
 # set working directory to neon-veg in local environment
 #setwd("~/github/neon-veg")
@@ -238,6 +240,7 @@ Using random forest algorithm to classify species of shrubs at the SJER site in 
 
 According to the species histogram, some species have very few samples in the data set.The data set will be filtered to maintain only species that have >20 samples. 303 samples across 5 species were used with 3 descriptor variables (shape, height, crown diameter) were used. 
 
+To avoid classifier bias, the number of samples was reduced to 46, the minimum number of samples across the species. in comparison, CECU had 121 samples and if the number of samples per class was not adjusted, this resulted in a great overestimation of CECU by the classifier. 
 
 Tuning parameters for RF: 
 - mtry: Number of variables randomly sampled as candidates at each split.
@@ -253,7 +256,8 @@ The actual and predicted species for every iteration of the LOOCV were plotted i
   The total accuracy for each class:
   User's accuracy: 
   Producer's accuracy: 
-  Overall predictive accuravy: 
+  Overall predictive accuracy: 
+  Kappa (the amount of agreement correct by the agreement expected by chance): 
 
 It gives estimates of what variables are important in the classification; in other words, which features add the most predictive power to the model. (Sort of like coefficients?) The scales are usually arbitrary, and there are two different criteria used that can generate different importance rankings. 
   
@@ -273,9 +277,10 @@ As shown in the variable importance plot, there is a different variable importan
 RF uses an Out-of-Bag (OOB) sampling procedure to provide a reliable error rate: Two thirds of the samples were randomly selected and used for training while the remaining third is used for validation. OOB is the mean prediction error on each training sample. 
 
 
-
-
 ```{r}
+# set the random seed in R for reproducibility
+set.seed(14)
+
 # further filter data drame for only columns of interest
 woody_input2 <- woody_gt %>% 
           select(shape, 
@@ -284,14 +289,104 @@ woody_input2 <- woody_gt %>%
                  taxonID) %>% 
           na.omit()
 
-# set the random seed in R for reproducibility
-set.seed(14)
+# reduce number of samples per species to avoid classifier bias 
+sampleSummary <- woody_input2 %>%
+                group_by(taxonID) %>%
+                  summarize(total = n())
+minSamples <- min(sampleSummary$total)
 
-# LOOCV using caret package 
-# define training control
+# isolate the samples per species
+taxon1 <- woody_input2[woody_input2$taxonID=="CECU",]
+taxon2 <- woody_input2[woody_input2$taxonID=="CELE2",]
+taxon3 <- woody_input2[woody_input2$taxonID=="LUAL4",]
+taxon4 <- woody_input2[woody_input2$taxonID=="RHIL",]
+taxon5 <- woody_input2[woody_input2$taxonID=="TODI",]
+# keep random minSamples of each species; merge
+species1 <- taxon1[sample(nrow(taxon1), minSamples), ]
+species2 <- taxon2[sample(nrow(taxon2), minSamples), ]
+species3 <- taxon3[sample(nrow(taxon3), minSamples), ]
+species4 <- taxon4[sample(nrow(taxon4), minSamples), ]
+species5 <- taxon5[sample(nrow(taxon5), minSamples), ]
+input <- rbind(species1, species2, species3, species4, species5)
+
+# convert to categorical variables for classifier 
+input$shape <- factor(input$shape)
+
+# LOOCV using caret package. define training control
 train_control <- trainControl(method="LOOCV")
+
 # train the model
-model2 <- train(taxonID~., data=woody_input2, trControl=train_control, method="rf")
+rf <- train(taxonID~., data=input, trControl=train_control, method="rf")
+
+# keep mtry=2, since it yields the highest accuracy 0.3882353
+# with Kappa value  0.2352941 
+rf.2 <- rf$pred[seq(1, nrow(rf$pred), 3), ]
+
+# plot confusion matrix 
+cm.2 <- data.frame(melt(xtabs( ~ rf.2$pred + rf.2$obs)))
+ggplot(data = cm.2,
+       mapping = aes(x = rf.2.pred,
+                     y = rf.2.obs)) +
+  geom_tile(aes(fill = value)) +
+  geom_text(aes(label = sprintf("%1.0f", value)), vjust = 1) +
+  scale_fill_gradient(low = "gray",
+                      high = "coral1",
+                      trans = "log") +
+  labs(x = "Predicted", y = "Actual") + 
+  theme(legend.position="none")
+
+confusionMatrix(rf.2$pred, rf.2$obs)
+
+# calculate total accuracy, user's, and producers 
+cm.tab <- xtabs(~ rf.2$pred + rf.2$obs)
+
+# overall accuracy
+sums <- vector()
+for(i in 1:dim(cm.tab)[1]){
+  sums[i] <- cm.tab[i,i]
+}
+o.accuracy <- sum(sums)/sum(cm.tab)
+# User accuracy
+u.accuracy <- diag(cm.tab) /rowSums(cm.tab)
+# Producer accuracy
+p.accuracy <- diag(cm.tab)/colSums(cm.tab)
+
+# plot variable importance 
+varImpPlot(rf$finalModel)
+
+# boxplot of predictor variable ranges per species 
+# HEIGHT
+ggplot(aes(taxonID, height, fill = taxonID), data = input) +
+  geom_boxplot() + 
+  ggtitle("Height distributions per species") + 
+  labs(x = "Species ID", y = "Height (m)") + 
+  scale_fill_discrete(name = "Species ID")
+# CROWN DIAMETER
+ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = input) +
+  geom_boxplot() + 
+  ggtitle("Crown Diameter distributions per species") + 
+  labs(x = "Species ID", y = "Max Crown Diameter (m)") + 
+  scale_fill_discrete(name = "Species ID")
+# SHAPE 
+shapes <- input$shape[input$taxonID=="CELE2"]
+input %>% group_by(shape) %>% 
+  ggplot(aes(x = taxonID, y = shape, fill = shape)) + 
+    geom_bar(stat = "identity") 
+
+i <- input %>% group_by(taxonID, shape) %>% summarize(total = n())
+shapeTable <- xtabs(total~shape+taxonID, data=i)
+datm <- melt(cbind(shapeTable, ind = rownames(shapeTable)), id.vars = c('ind'))
+ggplot(data = i, aes(x=taxonID, y=shape, fill = shape)) + 
+  geom_bar(stat = "identity")
+
+  
+
+
+
+
+
+
+
 # summarize results
 print(model2)
 
@@ -310,7 +405,8 @@ ggplot(data = cm,
   scale_fill_gradient(low = "gray",
                       high = "coral1",
                       trans = "log") +
-  labs(x = "Predicted", y = "Actual")
+  labs(x = "Predicted", y = "Actual") + 
+  theme(legend.position="none")
 
 confusionMatrix(model2.2$pred,model2.2$obs)
 
@@ -319,7 +415,7 @@ n <- 130
 woody.train <- woody_input2[-n,]
 woody.train <- droplevels(woody.train)
 woody.test <- woody_input2[n,]
-woody.test <- droplevels(woody.train)
+woody.test <- droplevels(woody.test)
 rf_model <- randomForest(taxonID ~ ., 
                          data = woody.train,
                          importance = TRUE,
@@ -336,14 +432,33 @@ varImportance <- data.frame(Variables = row.names(importance),
 rankImportance <- varImportance %>%
   mutate(Rank = paste0('#',dense_rank(desc(Importance))))
 # Use ggplot2 to visualize the relative importance of variables
-ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
+# MDG
+g1 <- ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
     y = Importance, fill = Variables)) +
   geom_bar(stat='identity') + 
   #geom_text(aes(x = Variables, y = 0.5, label = Rank),
   #  hjust=0, vjust=0.55, size = 4, colour = 'red') +
   labs(x = 'Variables') +
+  theme(legend.position="none") + 
   coord_flip() 
 
+
+# MDA 
+varImportance <- data.frame(Variables = row.names(importance), 
+                            Importance = round(importance[ ,'MeanDecreaseAccuracy'],2))
+rankImportance <- varImportance %>%
+  mutate(Rank = paste0('#',dense_rank(desc(Importance))))
+g2 <- ggplot(rankImportance, aes(x = reorder(Variables, Importance), 
+    y = Importance, fill = Variables)) +
+  geom_bar(stat='identity') + 
+  #geom_text(aes(x = Variables, y = 0.5, label = Rank),
+  #  hjust=0, vjust=0.55, size = 4, colour = 'red') +
+  scale_fill_manual(values = c("red", "grey", "seagreen3"))
+  labs(x = 'Variables') +
+  theme(legend.position="none")
+  coord_flip() 
+
+grid.arrange(g1, g2, nrow = 1)
 ```
 
 
