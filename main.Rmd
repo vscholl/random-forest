@@ -243,27 +243,25 @@ According to the species histogram, some species have very few samples in the da
 To avoid classifier bias, the number of samples was reduced to 46, the minimum number of samples across the species. in comparison, CECU had 121 samples and if the number of samples per class was not adjusted, this resulted in a great overestimation of CECU by the classifier. 
 
 Tuning parameters for RF: 
-- mtry: Number of variables randomly sampled as candidates at each split.
+- mtry: Number of variables randomly sampled as candidates at each node/split; finds a variable (and value of that variable) which optimizes the split
 - ntree: Number of trees to grow. (used the default, 500)
 
 To split the available data into training and test sets, Leave One Out Cross Validation (LOOCV) was used to avoid overfitting in the final model and to ensure that all species were represented in model training. 
 
 Random seed was set for reproducibiliy. 
 Using the caret package in R, LOOCV was performed and yielded the following performance metrics: 
-  mtry=2 yielded the highest accuracy, 0.5016502
+  mtry=2 yielded the highest accuracy, 0.39
   
 The actual and predicted species for every iteration of the LOOCV were plotted in the confusionMatrix. 
-  The total accuracy for each class:
-  User's accuracy: 
-  Producer's accuracy: 
-  Overall predictive accuracy: 
-  Kappa (the amount of agreement correct by the agreement expected by chance): 
+  Overall predictive accuracy: 39%
+  Kappa (the amount of agreement correct by the agreement expected by chance. The values range from  1, which indicates complete disagreement between classes, to +1, which indicates a perfect agreement): 0.24
 
 It gives estimates of what variables are important in the classification; in other words, which features add the most predictive power to the model. (Sort of like coefficients?) The scales are usually arbitrary, and there are two different criteria used that can generate different importance rankings. 
   
   (1) Gini of Mean Decrease in Impurity (MDI) aka Node Impurity / Mean Decrease Gini
     - difference between RSS before and after the split on that variable
     - Look at each node, which variable was used to split. 
+    - GINI importance measures the average gain of purity by splits of a given variable. If the variable is useful, it tends to split mixed labeled nodes into pure single class nodes.
     
   (2) Permutation Importance or Mean Decrease in Accuracy (MDA)
     - MDA is calculated by excluding each variable in the model. A high MDA means that the variable has an important impact on the model’s classification performance.
@@ -316,7 +314,11 @@ input$shape <- factor(input$shape)
 train_control <- trainControl(method="LOOCV")
 
 # train the model
-rf <- train(taxonID~., data=input, trControl=train_control, method="rf")
+rf <- train(taxonID~., 
+            data=input, 
+            trControl=train_control, 
+            importance = TRUE,
+            method="rf")
 
 # keep mtry=2, since it yields the highest accuracy 0.3882353
 # with Kappa value  0.2352941 
@@ -338,48 +340,51 @@ ggplot(data = cm.2,
 confusionMatrix(rf.2$pred, rf.2$obs)
 
 # calculate total accuracy, user's, and producers 
-cm.tab <- xtabs(~ rf.2$pred + rf.2$obs)
+o.accuracy <- rf$results$Accuracy[1]
 
+cm.tab <- xtabs(~ rf.2$pred + rf.2$obs)
 # overall accuracy
 sums <- vector()
 for(i in 1:dim(cm.tab)[1]){
   sums[i] <- cm.tab[i,i]
 }
-o.accuracy <- sum(sums)/sum(cm.tab)
+#o.accuracy <- sum(sums)/sum(cm.tab)
 # User accuracy
 u.accuracy <- diag(cm.tab) /rowSums(cm.tab)
 # Producer accuracy
 p.accuracy <- diag(cm.tab)/colSums(cm.tab)
+userProducerAcc <- rbind(u.accuracy, p.accuracy)
 
 # plot variable importance 
 varImpPlot(rf$finalModel)
 
 # boxplot of predictor variable ranges per species 
 # HEIGHT
-ggplot(aes(taxonID, height, fill = taxonID), data = input) +
+b1 <- ggplot(aes(taxonID, height, fill = taxonID), data = input) +
   geom_boxplot() + 
-  ggtitle("Height distributions per species") + 
-  labs(x = "Species ID", y = "Height (m)") + 
-  scale_fill_discrete(name = "Species ID")
+  ggtitle("Height") + 
+  labs(x = "Species ID", y = "Value") + 
+  scale_fill_discrete(name = "Species ID") + 
+  theme(legend.position="none",
+        axis.text.x=element_text(angle=45, hjust=1))
 # CROWN DIAMETER
-ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = input) +
+b2 <- ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = input) +
   geom_boxplot() + 
-  ggtitle("Crown Diameter distributions per species") + 
-  labs(x = "Species ID", y = "Max Crown Diameter (m)") + 
-  scale_fill_discrete(name = "Species ID")
+  ggtitle("Crown Diameter") + 
+  labs(x = "Species ID", y = " ") + 
+  scale_fill_discrete(name = "Species ID") + 
+  theme(legend.position="none",
+        axis.text.x=element_text(angle=45, hjust=1))
+grid.arrange(b1, b2, nrow = 1)
+
 # SHAPE 
-shapes <- input$shape[input$taxonID=="CELE2"]
-input %>% group_by(shape) %>% 
-  ggplot(aes(x = taxonID, y = shape, fill = shape)) + 
-    geom_bar(stat = "identity") 
+#plot(input$taxonID, input$shape, 
+#     xlab = "Species ID", 
+#     ylab = "Shape")
 
-i <- input %>% group_by(taxonID, shape) %>% summarize(total = n())
-shapeTable <- xtabs(total~shape+taxonID, data=i)
-datm <- melt(cbind(shapeTable, ind = rownames(shapeTable)), id.vars = c('ind'))
-ggplot(data = i, aes(x=taxonID, y=shape, fill = shape)) + 
-  geom_bar(stat = "identity")
+# variable importance 
+varImpPlot(rf$finalModel)
 
-  
 
 
 
