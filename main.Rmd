@@ -380,14 +380,5 @@ b2 <- ggplot(aes(taxonID, maxCrownDiameter, fill = taxonID), data = input) +
   theme(legend.position="none",
         axis.text.x=element_text(angle=45, hjust=1))
 grid.arrange(b1, b2, nrow = 1)
-
-# SHAPE 
-#plot(input$taxonID, input$shape, 
-#     xlab = "Species ID", 
-#     ylab = "Shape")
-
-# variable importance 
-varImpPlot(rf$finalModel)
-
 ```
 
